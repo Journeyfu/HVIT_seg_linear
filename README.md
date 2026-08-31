@@ -140,6 +140,20 @@ Please download the [NYU-depth dataset](PLACEHOLDER) and put the data in  `data/
 
 See `sample_scripts` for examples of running the code.
 
+#### PVTv2-B2 and Swin-Base ADE20K linear probes
+
+The repository also supports frozen `pvt_v2_b2.in1k` and
+`swin_base_patch4_window7_224.ms_in1k` backbones with the existing ADE20K
+linear-probe protocol. The backbone is frozen and only the original `BNHead`
+(SyncBN plus a 1x1 classifier) is trained. All dataset transforms, optimizer,
+learning-rate schedule, 40k-iteration budget, and sliding-window evaluation
+are inherited from `evaluation/configs/vitb_ade20k_linear_config.py`.
+
+```bash
+ADE20K_ROOT=/path/to/ADEChallengeData2016 NGPUS=8 \
+    bash sample_scripts/ade20k_hierarchical_linear.sh
+```
+
 We provide some demo outputs in demo/demo_outputs. For example, this image shows our denoising results on a cat image:
 ![Figure](demo/demo_outputs/dinov2_base_cat.jpg)
 From left to right, we show: (1) input crop, (2) raw DINOv2 base output, (3) Kmeans clustering of the raw output, (4) L2 feature norm of the raw output, (5) the similarity between the central patch and other patches in the raw output, (6) our denoised output, (7) Kmeans clustering of the denoised output, (8) L2 feature norm of the denoised output, (9) the similarity between the central patch and other patches in the denoised output, (10) the decomposed shared artifacts, (11) the L2 norm of the shared artifacts, (12) the ground-truth residual error, (13) the predicted residual term, and (13) the composition of the shared artifacts and the predicted residual term.

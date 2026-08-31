@@ -177,8 +177,24 @@ def main(args):
     # Initialize the backbone we are evaluating #
     #############################################
     device = torch.device("cuda")
-    args.stride = int(re.search(r"patch(\d+)", args.backbone_type).group(1))
-    vit = DVT.PretrainedViTWrapper(model_identifier=args.backbone_type, stride=args.stride)
+    is_hierarchical = args.backbone_type in DVT.HIERARCHICAL_MODEL_LIST
+    if is_hierarchical:
+        if (
+            args.load_denoiser_from is not None
+            or args.load_distilled_model_from is not None
+        ):
+            raise ValueError(
+                "PVTv2/Swin ADE20K baselines use their timm pretrained weights directly; "
+                "DVT denoiser/distilled checkpoints are not supported for these backbones."
+            )
+        vit = DVT.PretrainedHierarchicalWrapper(
+            model_identifier=args.backbone_type,
+            input_size=cfg.crop_size[0],
+            out_indices=tuple(cfg.model.backbone.out_indices),
+        )
+    else:
+        args.stride = int(re.search(r"patch(\d+)", args.backbone_type).group(1))
+        vit = DVT.PretrainedViTWrapper(model_identifier=args.backbone_type, stride=args.stride)
     vit = vit.to(device)
     if args.load_distilled_model_from is not None:
         ckpt = torch.load(args.load_distilled_model_from)

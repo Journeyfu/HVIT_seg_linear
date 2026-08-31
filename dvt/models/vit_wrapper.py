@@ -55,6 +55,11 @@ MODEL_LIST = [
     # "vit_huge_patch14_224_ijepa.in1k",
 ]
 
+HIERARCHICAL_MODEL_LIST = [
+    "pvt_v2_b2.in1k",
+    "swin_base_patch4_window7_224.ms_in1k",
+]
+
 
 class PretrainedViTWrapper(nn.Module):
     def __init__(
@@ -144,3 +149,78 @@ class PretrainedViTWrapper(nn.Module):
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
+
+
+class PretrainedHierarchicalWrapper(nn.Module):
+    """Frozen-feature wrapper for hierarchical timm transformers.
+
+    ADE20K uses 512x512 training crops and 512x512 sliding-window inference.
+    Swin is therefore constructed at 512 resolution, while PVTv2 remains
+    resolution agnostic. Outputs are the four hierarchy stages in NCHW form.
+    """
+
+    is_hierarchical = True
+
+    def __init__(
+        self,
+        model_identifier: str,
+        input_size: int = 512,
+        pretrained: bool = True,
+        out_indices: Tuple[int, ...] = (0, 1, 2, 3),
+    ):
+        super().__init__()
+        assert model_identifier in HIERARCHICAL_MODEL_LIST, (
+            f"Model type {model_identifier} not tested yet. "
+            f"Supported hierarchical models: {HIERARCHICAL_MODEL_LIST}"
+        )
+        self.model_identifier = model_identifier
+        self.input_size = input_size
+        self.out_indices = out_indices
+        self.patch_size = 4
+
+        model_kwargs = dict(pretrained=pretrained, num_classes=0)
+        if model_identifier.startswith("swin_"):
+            model_kwargs["img_size"] = input_size
+            self.family = "swin"
+        elif model_identifier.startswith("pvt_v2_"):
+            self.family = "pvt_v2"
+        else:
+            raise ValueError(f"Unsupported hierarchical model: {model_identifier}")
+
+        self.model = timm.create_model(model_identifier, **model_kwargs)
+        self.feature_channels = tuple(
+            info["num_chs"] for info in self.model.feature_info
+        )
+        self.feature_reductions = tuple(
+            info["reduction"] for info in self.model.feature_info
+        )
+        self.transformation = self._create_transformation()
+
+    @property
+    def n_output_dims(self) -> int:
+        return self.feature_channels[-1]
+
+    def _create_transformation(self) -> transforms.Compose:
+        data_config = timm.data.resolve_model_data_config(model=self.model)
+        return timm.data.create_transform(**data_config, is_training=False)
+
+    def forward_features(self, x: torch.Tensor) -> List[torch.Tensor]:
+        if self.family == "swin":
+            return self.model.forward_intermediates(
+                x,
+                indices=self.out_indices,
+                norm=True,
+                output_fmt="NCHW",
+                intermediates_only=True,
+            )
+
+        x = self.model.patch_embed(x)
+        outputs = []
+        for index, stage in enumerate(self.model.stages):
+            x = stage(x)
+            if index in self.out_indices:
+                outputs.append(x)
+        return outputs
+
+    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+        return self.forward_features(x)

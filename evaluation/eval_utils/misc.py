@@ -40,11 +40,15 @@ def build_segmentor(cfg, backbone_model):
     # we only do finetuning on the head
     for param in backbone_model.parameters():
         param.requires_grad = False
+    backbone_model.eval()
 
     model = build_segmentor_(
         cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
     )
-    if hasattr(backbone_model, "denoiser") and backbone_model.denoiser is not None:
+    if getattr(backbone_model, "is_hierarchical", False):
+        logger.info("Using a hierarchical transformer as the frozen backbone.")
+        model.backbone.forward = backbone_model.forward_features
+    elif hasattr(backbone_model, "denoiser") and backbone_model.denoiser is not None:
         logger.info("Using the single-block denoiser")
         model.backbone.forward = lambda x: [backbone_model(x).permute(0, 3, 1, 2)] * 4
         model.backbone.register_forward_pre_hook(
